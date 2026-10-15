@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ECG Monitor</title>
+<style>
+body {
+  margin: 0;
+  background: black;
+  color: #33ff66;
+  font-family: monospace;
+  overflow: hidden;
+}
+#top {
+  padding: 10px;
+}
+button {
+  background: black;
+  color: #33ff66;
+  border: 1px solid #33ff66;
+  padding: 6px 10px;
+  margin-right: 5px;
+  cursor: pointer;
+}
+canvas {
+  display: block;
+  background-image:
+    linear-gradient(#0b2b15 1px, transparent 1px),
+    linear-gradient(90deg, #0b2b15 1px, transparent 1px);
+  background-size: 25px 25px;
+}
+#bpm {
+  position: absolute;
+  top: 50px;
+  right: 30px;
+  font-size: 90px;
+}
+#off {
+  position: absolute;
+  top: 45%;
+  width: 100%;
+  text-align: center;
+  color: red;
+  font-size: 30px;
+  display: none;
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <button onclick="connect()">Connect</button>
+  <button onclick="sound = !sound; this.innerText = sound ? 'Sound on' : 'Sound off'; alarm()">Sound on</button>
+  <span id="status">not connected</span>
+</div>
+<div id="bpm">--</div>
+<div id="off">LEADS OFF</div>
+<canvas id="c"></canvas>
+
+<script>
+let canvas = document.getElementById("c");
+let ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight - 50;
+
+let x = 0;
+let lastY = canvas.height / 2;
+let leadsOff = false;
+let sound = true;
+
+function draw(y) {
+  ctx.clearRect(x + 1, 0, 20, canvas.height);
+
+  ctx.strokeStyle = "#33ff66";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, lastY);
+  ctx.lineTo(x + 1, y);
+  ctx.stroke();
+
+  lastY = y;
+  x++;
+  if (x > canvas.width) {
+    x = 0;
+  }
+}
+
+let size = 0;
+
+function newValue(v) {
+  size = size * 0.997;
+  if (Math.abs(v) > size) size = Math.abs(v);
+
+  if (size < 15) {
+    setOff(true);
+    draw(canvas.height / 2);
+  } else {
+    setOff(false);
+    let scale = size;
+    if (scale < 60) scale = 60;
+    let y = canvas.height / 2 - v / scale * canvas.height * 0.4;
+    if (y < 0) y = 0;
+    if (y > canvas.height) y = canvas.height;
+    draw(y);
+  }
+}
+
+let audio;
+let alarmGain;
+
+function startAudio() {
+  audio = new AudioContext();
+  let osc = audio.createOscillator();
+  osc.frequency.value = 880;
+  alarmGain = audio.createGain();
+  alarmGain.gain.value = 0;
+  osc.connect(alarmGain);
+  alarmGain.connect(audio.destination);
+  osc.start();
+}
+
+function beep() {
+  if (!sound || !audio) return;
+  let osc = audio.createOscillator();
+  let gain = audio.createGain();
+  osc.frequency.value = 960;
+  gain.gain.value = 0.25;
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start();
+  osc.stop(audio.currentTime + 0.08);
+}
+
+function alarm() {
+  if (!alarmGain) return;
+  if (leadsOff && sound) alarmGain.gain.value = 0.15;
+  else alarmGain.gain.value = 0;
+}
+
+function setOff(off) {
+  if (off == leadsOff) return;
+  leadsOff = off;
+  if (off) {
+    document.getElementById("off").style.display = "block";
+    document.getElementById("bpm").innerText = "--";
+  } else {
+    document.getElementById("off").style.display = "none";
+  }
+  alarm();
+}
+
+function handle(line) {
+  if (line == "") return;
+  if (line == "L") {
+    setOff(true);
+    draw(canvas.height / 2);
+    return;
+  }
+
+  if (line.startsWith("B,")) {
+    if (leadsOff) return;
+    document.getElementById("bpm").innerText = line.split(",")[1];
+    beep();
+  } else {
+    newValue(Number(line));
+  }
+}
+
+// chrome/edge only
+async function connect() {
+  startAudio();
+  let port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+  document.getElementById("status").innerText = "connected";
+
+  let decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  let reader = decoder.readable.getReader();
+
+  let text = "";
+  while (true) {
+    let { value, done } = await reader.read();
+    if (done) break;
+    text += value;
+    let lines = text.split("\n");
+    text = lines.pop();
+    for (let l of lines) {
+      handle(l.trim());
+    }
+  }
+}
+</script>
+</body>
+</html>
