@@ -2,7 +2,9 @@
 
 heart monitor i made with an AD8232 and an arduino uno. it shows the heartbeat on a green screen like the ones in hospitals and beeps on every beat. if a pad comes off it goes flat and does the long beep.
 
-video: demo.mov
+![demo](demo.gif)
+
+full video: [demo.mov](demo.mov)
 
 ## parts
 - AD8232 ecg sensor + the 3 pads
